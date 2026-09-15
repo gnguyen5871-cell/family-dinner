@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Family Dinner Planner</title>
+
+    <!-- jQuery CDN -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+    <!-- Firebase App & Database SDKs (v8 compatibility mode) -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
+    <style>
+        :root {
+            --primary-color: #2c3e50;
+            --accent-color: #3498db;
+            --available-bg: #d4edda;
+            --available-border: #28a745;
+            --busy-bg: #f8d7da;
+            --busy-border: #dc3545;
+            --gap-bg: #fff3cd;
+            --gap-border: #ffeba2;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f8f9fa;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+        }
+
+        h1 {
+            color: var(--primary-color);
+            margin-top: 0;
+        }
+
+        .status-bar {
+            padding: 8px 12px;
+            margin-bottom: 20px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: bold;
+            display: inline-block;
+        }
+
+        .status-syncing { background: #e2e3e5; color: #383d41; }
+        .status-online { background: #d4edda; color: #155724; }
+
+        .controls-panel {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: center;
+            justify-content: space-between;
+            background: #eef2f5;
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 25px;
+        }
+
+        .add-member-form {
+            display: flex;
+            gap: 10px;
+        }
+
+        input[type="text"] {
+            padding: 8px 12px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+
+        .btn-add { background-color: #27ae60; color: white; }
+        .btn-add:hover { background-color: #219150; }
+
+        .btn-remove { background-color: #e74c3c; color: white; padding: 4px 8px; font-size: 12px; }
+        .btn-remove:hover { background-color: #c0392b; }
+
+        .gaps-box {
+            background-color: var(--gap-bg);
+            border: 1px solid var(--gap-border);
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 25px;
+        }
+
+        .gaps-box h3 {
+            margin-top: 0;
+            color: #856404;
+        }
+
+        .gap-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .gap-badge {
+            background: #fff;
+            border: 1px solid #ffe8a1;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-weight: bold;
+            color: #856404;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        .grid-container {
+            overflow-x: auto;
+        }
+
+        table.calendar-table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: center;
+        }
+
+        table.calendar-table th, table.calendar-table td {
+            border: 1px solid #dee2e6;
+            padding: 10px;
+            min-width: 110px;
+        }
+
+        table.calendar-table th {
+            background-color: var(--primary-color);
+            color: white;
+        }
+
+        .member-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .time-slot {
+            padding: 8px;
+            margin: 4px 0;
+            border-radius: 4px;
+            cursor: pointer;
+            user-select: none;
+            font-size: 12px;
+            font-weight: bold;
+            transition: all 0.15s ease-in-out;
+        }
+
+        .slot-available {
+            background-color: var(--available-bg);
+            color: var(--available-border);
+            border: 1px solid var(--available-border);
+        }
+
+        .slot-busy {
+            background-color: var(--busy-bg);
+            color: var(--busy-border);
+            border: 1px solid var(--busy-border);
+        }
+
+        .day-title {
+            font-weight: bold;
+            background-color: #f1f3f5;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🍽️ Family Dinner Planner</h1>
+    <div id="syncStatus" class="status-bar status-syncing">🔄 Connecting to cloud database...</div>
+
+    <!-- Controls -->
+    <div class="controls-panel">
+        <div class="add-member-form">
+            <input type="text" id="memberNameInput" placeholder="Enter family member name...">
+            <button class="btn-add" id="btnAddMember">Add Member</button>
+        </div>
+        <div>
+            <span style="font-size: 13px; color: #666;">Click any slot to toggle <strong>Available</strong> / <strong>Busy</strong></span>
+        </div>
+    </div>
+
+    <!-- Dinner Opportunities -->
+    <div class="gaps-box">
+        <h3>🎉 Dinner Opportunities (Everyone Free)</h3>
+        <div id="commonGapsContainer" class="gap-list">
+            <em>Calculating open slots...</em>
+        </div>
+    </div>
+
+    <!-- Calendar Table -->
+    <div class="grid-container">
+        <table class="calendar-table">
+            <thead>
+                <tr id="tableHeaderRow">
+                    <th style="width: 120px;">Day</th>
+                </tr>
+            </thead>
+            <tbody id="calendarBody">
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    // -----------------------------------------------------------------
+    // 1. FIREBASE CONFIGURATION (Replace with your actual keys)
+    // -----------------------------------------------------------------
+    const firebaseConfig = {
+  apiKey: "AIzaSyAfAzvGEKnH6E8c-CUC5cPQjrpXNJEgjOM",
+  authDomain: "family-dinner-planner-8f1c0.firebaseapp.com",
+  projectId: "family-dinner-planner-8f1c0",
+  storageBucket: "family-dinner-planner-8f1c0.firebasestorage.app",
+  messagingSenderId: "412815867230",
+  appId: "1:412815867230:web:cbd10ce320bdebb30423cf",
+  measurementId: "G-E33V8W04K8"
+};
+
+    // Initialize Firebase
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    // Data Constants
+    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    const hours = [
+        '04:00 PM', '05:00 PM', '06:00 PM', '07:00 PM', 
+        '08:00 PM', '09:00 PM', '10:00 PM', '11:00 PM'
+    ];
+
+    let familyData = [];
+
+    $(document).ready(function() {
+
+        // -----------------------------------------------------------------
+        // 2. REALTIME DATABASE LISTENERS
+        // -----------------------------------------------------------------
+        
+        // Listen to changes from Firebase across ALL family devices
+        db.ref('familyData').on('value', (snapshot) => {
+            const data = snapshot.val();
+            familyData = data || []; // If database is empty, default to empty array
+            
+            $('#syncStatus')
+                .removeClass('status-syncing')
+                .addClass('status-online')
+                .html('🟢 Live Sync Active');
+
+            renderApp();
+        });
+
+        // Save data helper function
+        function saveDataToCloud() {
+            db.ref('familyData').set(familyData);
+        }
+
+        // -----------------------------------------------------------------
+        // 3. APP LOGIC & RENDERING
+        // -----------------------------------------------------------------
+        
+        function initMemberAvailability(member) {
+            if (!member.availability) member.availability = {};
+            days.forEach(day => {
+                if (!member.availability[day]) member.availability[day] = {};
+                hours.forEach(hour => {
+                    if (member.availability[day][hour] === undefined) {
+                        member.availability[day][hour] = true; // Default to available
+                    }
+                });
+            });
+        }
+
+        function renderApp() {
+            familyData.forEach(member => initMemberAvailability(member));
+
+            // Render Table Header
+            const $headerRow = $('#tableHeaderRow');
+            $headerRow.find('th:gt(0)').remove();
+
+            familyData.forEach(member => {
+                $headerRow.append(`
+                    <th>
+                        <div class="member-header">
+                            <span>${escapeHtml(member.name)}</span>
+                            <button class="btn-remove" data-id="${member.id}">✕</button>
+                        </div>
+                    </th>
+                `);
+            });
+
+            // Render Body
+            const $calendarBody = $('#calendarBody');
+            $calendarBody.empty();
+
+            days.forEach(day => {
+                let rowHtml = `<tr><td class="day-title">${day}</td>`;
+
+                familyData.forEach(member => {
+                    rowHtml += `<td>`;
+                    hours.forEach(hour => {
+                        const isAvailable = member.availability[day][hour];
+                        const slotClass = isAvailable ? 'slot-available' : 'slot-busy';
+                        const slotText = isAvailable ? `${hour} - Free` : `${hour} - Busy`;
+
+                        rowHtml += `
+                            <div class="time-slot ${slotClass}" 
+                                 data-member-id="${member.id}" 
+                                 data-day="${day}" 
+                                 data-hour="${hour}">
+                                ${slotText}
+                            </div>
+                        `;
+                    });
+                    rowHtml += `</td>`;
+                });
+
+                rowHtml += `</tr>`;
+                $calendarBody.append(rowHtml);
+            });
+
+            calculateGaps();
+        }
+
+        function calculateGaps() {
+            const $container = $('#commonGapsContainer');
+            $container.empty();
+
+            if (familyData.length === 0) {
+                $container.html('<em>Add family members to see matching dinner times.</em>');
+                return;
+            }
+
+            let gapsFound = 0;
+
+            days.forEach(day => {
+                hours.forEach(hour => {
+                    const allAvailable = familyData.every(member => member.availability[day][hour] === true);
+
+                    if (allAvailable) {
+                        gapsFound++;
+                        $container.append(`
+                            <div class="gap-badge">
+                                📍 ${day} @ ${hour}
+                            </div>
+                        `);
+                    }
+                });
+            });
+
+            if (gapsFound === 0) {
+                $container.html('<em>No common slots where everyone is available. Try adjusting schedule!</em>');
+            }
+        }
+
+        // -----------------------------------------------------------------
+        // 4. EVENT HANDLERS
+        // -----------------------------------------------------------------
+
+        // Click Time Slot
+        $(document).on('click', '.time-slot', function() {
+            const memberId = $(this).data('member-id').toString();
+            const day = $(this).data('day');
+            const hour = $(this).data('hour');
+
+            const member = familyData.find(m => m.id === memberId);
+            if (member) {
+                member.availability[day][hour] = !member.availability[day][hour];
+                saveDataToCloud();
+            }
+        });
+
+        // Add Member
+        $('#btnAddMember').on('click', function() {
+            const name = $('#memberNameInput').val().trim();
+            if (!name) return alert('Enter a name');
+
+            familyData.push({
+                id: Date.now().toString(),
+                name: name,
+                availability: {}
+            });
+
+            saveDataToCloud();
+            $('#memberNameInput').val('');
+        });
+
+        // Remove Member
+        $(document).on('click', '.btn-remove', function() {
+            const memberId = $(this).data('id').toString();
+            if (confirm('Remove this person from calendar?')) {
+                familyData = familyData.filter(m => m.id !== memberId);
+                saveDataToCloud();
+            }
+        });
+
+        function escapeHtml(text) {
+            return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        }
+    });
+</script>
+
+</body>
+</html>
